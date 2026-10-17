@@ -1,3 +1,5 @@
+Read docs/BRIEF.md first. It is the source of truth for the business and the rules.
+
 # Agent Guidance & Rules for MizanFlow
 
 ## Core Mandates & Rules

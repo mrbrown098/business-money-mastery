@@ -2,6 +2,8 @@
 
 **MizanFlow** is a FREE, offline-first business management web application built specifically for small chemical repacking businesses.
 
+**Live Application URL**: [https://mrbrown098.github.io/business-money-mastery/](https://mrbrown098.github.io/business-money-mastery/)
+
 It enables businesses to buy chemicals in bulk, repack them into smaller container sizes, sell to customers (including credit sales), track expenses, and manage net profitability without relying on external servers or paid APIs.
 
 ---
@@ -61,11 +63,11 @@ It enables businesses to buy chemicals in bulk, repack them into smaller contain
 
 ## Deployment Instructions
 
-### GitHub Pages Deployment
+### GitHub Pages Setup
 
-The application is deployed to GitHub Pages via GitHub Actions workflow (`.github/workflows/deploy.yml`).
-
-Vite is configured with `base: '/business-money-mastery/'` matching the repository name. When pushed to `main`, GitHub Actions automatically builds and deploys static assets to GitHub Pages.
+1. In the GitHub repository settings (`Settings -> Pages`), set **Source** to **GitHub Actions**.
+2. The `.github/workflows/deploy.yml` workflow automatically builds and deploys static assets to GitHub Pages on every push to `main`.
+3. Access the live PWA at [https://mrbrown098.github.io/business-money-mastery/](https://mrbrown098.github.io/business-money-mastery/).
 
 ---
 
