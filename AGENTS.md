@@ -1,5 +1,13 @@
 Read docs/BRIEF.md first. It is the source of truth for the business and the rules.
 
+## Git workflow (mandatory)
+1. The repo has only two branches: `main` and `workspace`. Never create any other branch (no feat/..., fix/..., or tool-generated names). If your tooling creates another branch automatically, move the work to `workspace`, delete the extra branch, and tell the user.
+2. Before every task: fetch origin, then merge origin/main into `workspace` (merge, not rebase, never force-push). If there are conflicts, resolve them and tell the user.
+3. Do all work on `workspace` and push it. Then open a pull request from `workspace` into `main` (title = task name). If a PR from `workspace` is already open, just push to it. If you cannot open a PR, say so clearly: the user will open it.
+4. Never merge a PR yourself. The user merges with "Create a merge commit" and keeps the branch.
+5. Never delete `workspace` or `main`.
+6. Before submitting, actually run: npm run typecheck && npm run lint && npm run test && npm run build, and report the real results (never claim a pass you did not run).
+
 # Agent Guidance & Rules for MizanFlow
 
 ## Core Mandates & Rules
