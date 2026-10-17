@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@import "./styles/tokens.css";
+
+body {
+  background-color: var(--app-bg);
+  color: var(--app-text);
+  font-family: var(--font-poppins);
+  min-height: 100vh;
+  overflow-x: hidden;
+}

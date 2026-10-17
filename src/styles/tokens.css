@@ -1,0 +1,117 @@
+/* Fontsource self-hosted fonts imports */
+@import '@fontsource/orbitron/600.css';
+@import '@fontsource/orbitron/800.css';
+@import '@fontsource/playfair-display/600.css';
+@import '@fontsource/playfair-display/500-italic.css';
+@import '@fontsource/poppins/300.css';
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+
+@theme {
+  --color-bg-dark: #07070b;
+  --color-gold: #f5c04a;
+  --color-gold-light: #ffdf8a;
+  --color-cyan: #00e5ff;
+  --color-violet: #8a5cff;
+  --color-green: #25d366;
+  --color-orange: #ff9f43;
+  --color-pink: #ff5d7a;
+  --color-text-main: #f2f2f7;
+  --color-text-muted: #a3a3b8;
+  --color-glass-fill: rgba(255, 255, 255, 0.06);
+  --color-glass-border: rgba(255, 255, 255, 0.14);
+
+  --font-orbitron: 'Orbitron', system-ui, sans-serif;
+  --font-playfair: 'Playfair Display', Georgia, serif;
+  --font-poppins: 'Poppins', system-ui, sans-serif;
+
+  --radius-card: 1.375rem; /* 22px */
+  --radius-pill: 9999px;
+}
+
+:root {
+  --app-bg: #07070b;
+  --app-gold: #f5c04a;
+  --app-gold-2: #ffdf8a;
+  --app-cyan: #00e5ff;
+  --app-violet: #8a5cff;
+  --app-green: #25d366;
+  --app-orange: #ff9f43;
+  --app-pink: #ff5d7a;
+  --app-text: #f2f2f7;
+  --app-muted: #a3a3b8;
+  --app-glass-fill: rgba(255, 255, 255, 0.06);
+  --app-glass-border: rgba(255, 255, 255, 0.14);
+  --app-radius-card: 22px;
+}
+
+/* Glass panel utility */
+.glass-panel {
+  background: var(--app-glass-fill);
+  border: 1px solid var(--app-glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: var(--app-radius-card);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--app-radius-card);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(245, 192, 74, 0.4);
+  box-shadow: 0 0 20px rgba(245, 192, 74, 0.15);
+}
+
+/* Gradient Text Clip */
+.gradient-text-gold {
+  background: linear-gradient(90deg, #f5c04a, #ffdf8a, #00e5ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow Utilities */
+.glow-green {
+  box-shadow: 0 0 20px rgba(37, 211, 102, 0.35);
+}
+
+.glow-gold {
+  box-shadow: 0 0 20px rgba(245, 192, 74, 0.35);
+}
+
+/* Reduced Motion & Low-End Auto-Throttling */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.lite-mode * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  animation: none !important;
+  box-shadow: none !important;
+}
+
+/* Print Overrides */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .glass-panel, .glass-card, header, nav, button {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+}
