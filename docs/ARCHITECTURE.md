@@ -1,29 +1,30 @@
 # MizanFlow Architecture Documentation
 
-## Overview
+## System Architecture
 
-MizanFlow is designed as a zero-cost, serverless, offline-first Progressive Web Application (PWA) tailored for small chemical repacking businesses.
+MizanFlow is a 100% serverless, zero-cost, offline-first Progressive Web Application (PWA) tailored for chemical repacking small businesses.
 
 ---
 
 ## Architectural Principles
 
-1. **Storage Abstraction Layer (`StorageProvider`)**
-   - Direct database access is strictly encapsulated behind the `StorageProvider` interface (`src/storage/StorageProvider.ts`).
-   - UI components interact with storage through `useStorage()` React Context and never issue direct Dexie or IndexedDB queries.
-   - Current implementation: `LocalProvider` (`src/storage/LocalProvider.ts`).
-   - Future cloud sync provider: `GoogleDriveProvider` (`src/storage/GoogleDriveProvider.ts`).
+1. **Pure Domain Logic Layer (`src/domain/`)**
+   - All core business rules, calculations, and financial logic are decoupled from React components and Dexie database tables.
+   - Modules in `src/domain/`:
+     - `materialCalculations.ts`: Weighted average material unit cost.
+     - `productCalculations.ts`: Cost per pack, profit per pack, margin %.
+     - `saleCalculations.ts`: Subtotal, net total, COGS, gross profit.
+     - `ledgerCalculations.ts`: Stock balances, oversell validation checks.
+     - `customerCalculations.ts`: Total customer balance, FIFO payment application, overdue days.
+     - `analyticsCalculations.ts`: Dashboard monthly metrics, 6-month trends, expense pie, top products, top debtors.
+     - `phoneAndMessaging.ts`: Pakistan phone normalization (`92XXXXXXXXXX`) and WhatsApp link generator.
 
-2. **Money Precision & Integrity**
-   - Monetary values (cost prices, selling prices, sale totals, payments, expenses) are strictly stored as integer minor units (`number` integers).
-   - E.g., `100.50 PKR` is stored as `10050`.
-   - Utility functions in `src/utils/money.ts` convert float inputs to integer minor units safely before persisting.
+2. **Storage Abstraction Layer (`StorageProvider`)**
+   - UI components interact with storage exclusively via the `StorageProvider` interface (`useStorage()`).
+   - `LocalProvider` handles Dexie v2 IndexedDB persistence and transactional atomic operations (e.g. sale creation with stock deduction and overselling guard, or soft deletion with stock restoration).
 
-3. **Append-Only Inventory Ledger**
-   - Inventory is tracked through an append-only transaction ledger (`StockMovement`).
-   - Product stock balance is derived dynamically by calculating `sum(quantities)`.
-   - Positive quantities represent purchases or repack outputs; negative quantities represent sales or repack input consumptions.
-
-4. **Future Google Drive Sync Strategy**
-   - Every entity record contains `id` (UUID), `createdAt`, `updatedAt`, `deletedAt` (soft delete timestamp), and `deviceId`.
-   - When Google Drive sync is enabled in future phases, synchronization will download `mizanflow_backup.json` from Google Drive App Data folder and perform a two-way merge using Last-Write-Wins (LWW) based on `updatedAt`.
+3. **Money & Quantity Rules**
+   - Monetary values: Integer minor units (paisas).
+   - Raw material quantities: Integer grams/millilitres.
+   - Pack counts: Integer counts.
+   - Cost per pack snapshot (`costPerPackAtSale`) is recorded on each sale line item at the time of sale, locking in historical profit accuracy.

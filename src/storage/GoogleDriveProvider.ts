@@ -1,53 +1,34 @@
 import {
   StorageProvider,
   StorageExportData,
-  DashboardMetrics,
-  StockSummary,
+  StockSummaryItem,
 } from './StorageProvider';
 import {
-  Product,
-  ContainerSize,
-  StockMovement,
+  Material,
   Contact,
   Purchase,
+  PurchaseItem,
+  Product,
+  PackingBatch,
   Sale,
   SaleItem,
   Payment,
   Expense,
-  RepackBatch,
+  StockMovement,
   Settings,
 } from '../types/domain';
+import { MonthlyDashboardMetrics } from '../domain/analyticsCalculations';
 
-/**
- * Placeholder implementation for GoogleDriveProvider.
- *
- * FUTURE IMPLEMENTATION STRATEGY:
- * 1. Authentication:
- *    - Use Google Identity Services (GIS) / OAuth 2.0 PKCE implicit flow to authenticate the user.
- *    - Request scope: `https://www.googleapis.com/auth/drive.appdata` (App Data folder) to keep
- *      application files isolated and free from accessing the user's main Drive files.
- *
- * 2. Sync Protocol & Conflict Resolution:
- *    - All entities feature `createdAt`, `updatedAt`, `deletedAt`, and `deviceId`.
- *    - On sync, fetch remote state (`mizanflow_backup.json`) and compute two-way merge based on LWW
- *      (Last-Write-Wins) using timestamp `updatedAt`.
- *    - Soft-deleted entities (`deletedAt` timestamp) ensure deletions propagate cleanly across devices.
- *
- * 3. Architecture Isolation:
- *    - The React UI components consume `useStorage()` context interface only.
- *    - Switching active provider to `GoogleDriveProvider` requires zero changes to UI components.
- */
 export class GoogleDriveProvider implements StorageProvider {
   name = 'GoogleDriveProvider (Placeholder)';
 
   async isReady(): Promise<boolean> {
-    // Currently not configured or authenticated
     return false;
   }
 
   private throwNotImplemented(): never {
     throw new Error(
-      'GoogleDriveProvider is a planned future sync integration and is not implemented in Phase 1. Use LocalProvider.'
+      'GoogleDriveProvider is a planned future sync integration. Use LocalProvider.'
     );
   }
 
@@ -59,55 +40,19 @@ export class GoogleDriveProvider implements StorageProvider {
     this.throwNotImplemented();
   }
 
-  async getProducts(): Promise<Product[]> {
+  async getMaterials(): Promise<Material[]> {
     this.throwNotImplemented();
   }
 
-  async getProductById(_id: string): Promise<Product | null> {
+  async saveMaterial(_material: Material): Promise<void> {
     this.throwNotImplemented();
   }
 
-  async saveProduct(_product: Product): Promise<void> {
-    this.throwNotImplemented();
-  }
-
-  async deleteProduct(_id: string): Promise<void> {
-    this.throwNotImplemented();
-  }
-
-  async getContainerSizes(): Promise<ContainerSize[]> {
-    this.throwNotImplemented();
-  }
-
-  async saveContainerSize(_size: ContainerSize): Promise<void> {
-    this.throwNotImplemented();
-  }
-
-  async deleteContainerSize(_id: string): Promise<void> {
-    this.throwNotImplemented();
-  }
-
-  async getStockMovements(_productId?: string): Promise<StockMovement[]> {
-    this.throwNotImplemented();
-  }
-
-  async addStockMovement(_movement: StockMovement): Promise<void> {
-    this.throwNotImplemented();
-  }
-
-  async calculateStock(_productId: string): Promise<number> {
-    this.throwNotImplemented();
-  }
-
-  async getStockSummaries(): Promise<StockSummary[]> {
+  async deleteMaterial(_id: string): Promise<void> {
     this.throwNotImplemented();
   }
 
   async getContacts(_type?: 'customer' | 'supplier'): Promise<Contact[]> {
-    this.throwNotImplemented();
-  }
-
-  async getContactById(_id: string): Promise<Contact | null> {
     this.throwNotImplemented();
   }
 
@@ -123,7 +68,31 @@ export class GoogleDriveProvider implements StorageProvider {
     this.throwNotImplemented();
   }
 
-  async savePurchase(_purchase: Purchase): Promise<void> {
+  async getPurchaseItems(_purchaseId?: string): Promise<PurchaseItem[]> {
+    this.throwNotImplemented();
+  }
+
+  async savePurchase(_purchase: Purchase, _items: PurchaseItem[]): Promise<void> {
+    this.throwNotImplemented();
+  }
+
+  async getProducts(): Promise<Product[]> {
+    this.throwNotImplemented();
+  }
+
+  async saveProduct(_product: Product): Promise<void> {
+    this.throwNotImplemented();
+  }
+
+  async deleteProduct(_id: string): Promise<void> {
+    this.throwNotImplemented();
+  }
+
+  async getPackingBatches(): Promise<PackingBatch[]> {
+    this.throwNotImplemented();
+  }
+
+  async createPackingBatch(_batch: PackingBatch): Promise<void> {
     this.throwNotImplemented();
   }
 
@@ -131,7 +100,19 @@ export class GoogleDriveProvider implements StorageProvider {
     this.throwNotImplemented();
   }
 
-  async saveSale(_sale: Sale, _items: SaleItem[]): Promise<void> {
+  async getSaleItems(_saleId?: string): Promise<SaleItem[]> {
+    this.throwNotImplemented();
+  }
+
+  async saveSaleTransaction(
+    _sale: Sale,
+    _items: Omit<SaleItem, 'costPerPackAtSale'>[],
+    _payment?: Omit<Payment, 'saleId'>
+  ): Promise<void> {
+    this.throwNotImplemented();
+  }
+
+  async softDeleteSale(_saleId: string): Promise<void> {
     this.throwNotImplemented();
   }
 
@@ -155,17 +136,23 @@ export class GoogleDriveProvider implements StorageProvider {
     this.throwNotImplemented();
   }
 
-  async getRepackBatches(): Promise<RepackBatch[]> {
+  async getStockMovements(): Promise<StockMovement[]> {
     this.throwNotImplemented();
   }
 
-  async createRepackBatch(
-    _batch: Omit<RepackBatch, 'wastageQuantity' | 'wastagePercentage'>
-  ): Promise<RepackBatch> {
+  async getMaterialStock(_materialId: string): Promise<number> {
     this.throwNotImplemented();
   }
 
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
+  async getProductStock(_productId: string): Promise<number> {
+    this.throwNotImplemented();
+  }
+
+  async getStockSummaries(): Promise<StockSummaryItem[]> {
+    this.throwNotImplemented();
+  }
+
+  async getMonthlyMetrics(_yearMonth: string): Promise<MonthlyDashboardMetrics> {
     this.throwNotImplemented();
   }
 

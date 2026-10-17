@@ -1,17 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useStorage } from '../storage/useStorage';
-import { DashboardMetrics, StockSummary } from '../storage/StorageProvider';
+import { StockSummaryItem } from '../storage/StorageProvider';
 import { Settings } from '../types/domain';
+import { MonthlyDashboardMetrics } from '../domain/analyticsCalculations';
 import { formatMoney } from '../utils/money';
-import { DollarSign, Package, TrendingDown, ArrowRight, Layers } from 'lucide-react';
+import { DollarSign, Package, TrendingDown, ArrowRight, Layers, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const Dashboard: React.FC = () => {
   const { storage, refreshKey } = useStorage();
-  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [metrics, setMetrics] = useState<MonthlyDashboardMetrics | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [stockSummaries, setStockSummaries] = useState<StockSummary[]>([]);
+  const [stockSummaries, setStockSummaries] = useState<StockSummaryItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const currentYearMonth = new Date().toISOString().substring(0, 7);
 
   useEffect(() => {
     let isMounted = true;
@@ -19,7 +22,7 @@ export const Dashboard: React.FC = () => {
       try {
         setLoading(true);
         const [m, s, stock] = await Promise.all([
-          storage.getDashboardMetrics(),
+          storage.getMonthlyMetrics(currentYearMonth),
           storage.getSettings(),
           storage.getStockSummaries(),
         ]);
@@ -38,7 +41,7 @@ export const Dashboard: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [storage, refreshKey]);
+  }, [storage, refreshKey, currentYearMonth]);
 
   if (loading) {
     return (
@@ -59,58 +62,73 @@ export const Dashboard: React.FC = () => {
           {settings?.businessName || 'MizanFlow Business Dashboard'}
         </h2>
         <p className="text-slate-400 text-sm">
-          Real-time summary of receivables, inventory, and monthly operational expenses.
+          Real-time summary of Udhaar receivables, sales, COGS, expenses, and net Bachat (profit).
         </p>
       </div>
 
       {/* KPI Metric Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Receivables Card */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Udhaar Receivables Card */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-slate-400 text-sm font-medium">Total Receivables</span>
+            <span className="text-slate-400 text-xs font-semibold uppercase">Total Udhaar</span>
             <div className="p-2 bg-emerald-950 text-emerald-400 rounded-lg border border-emerald-800">
               <DollarSign className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4">
             <div className="text-2xl font-extrabold text-emerald-400">
-              {formatMoney(metrics?.totalReceivables || 0, currency)}
+              {formatMoney(metrics?.udhaarOutstanding || 0, currency)}
             </div>
-            <p className="text-xs text-slate-400 mt-1">Pending customer credit balances</p>
+            <p className="text-xs text-slate-400 mt-1">Outstanding customer credit</p>
           </div>
         </div>
 
-        {/* Stock Items Count Card */}
+        {/* Sales Card */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-slate-400 text-sm font-medium">Active Stock Products</span>
+            <span className="text-slate-400 text-xs font-semibold uppercase">Sales ({currentYearMonth})</span>
             <div className="p-2 bg-indigo-950 text-indigo-400 rounded-lg border border-indigo-800">
               <Package className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4">
             <div className="text-2xl font-extrabold text-indigo-400">
-              {metrics?.activeStockCount || 0}{' '}
-              <span className="text-sm font-normal text-slate-400">items</span>
+              {formatMoney(metrics?.sales || 0, currency)}
             </div>
-            <p className="text-xs text-slate-400 mt-1">Products with available stock balance</p>
+            <p className="text-xs text-slate-400 mt-1">Monthly net sales revenue</p>
           </div>
         </div>
 
-        {/* This Month Expenses Card */}
+        {/* Expenses Card */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-slate-400 text-sm font-medium">This Month Expenses</span>
+            <span className="text-slate-400 text-xs font-semibold uppercase">Expenses</span>
             <div className="p-2 bg-rose-950 text-rose-400 rounded-lg border border-rose-800">
               <TrendingDown className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4">
             <div className="text-2xl font-extrabold text-rose-400">
-              {formatMoney(metrics?.thisMonthExpenses || 0, currency)}
+              {formatMoney(metrics?.expenses || 0, currency)}
             </div>
-            <p className="text-xs text-slate-400 mt-1">Recorded operational expenses for current month</p>
+            <p className="text-xs text-slate-400 mt-1">Operational expenses for month</p>
+          </div>
+        </div>
+
+        {/* Net Bachat (Profit) Card */}
+        <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400 text-xs font-semibold uppercase">Net Bachat (Profit)</span>
+            <div className="p-2 bg-amber-950 text-amber-400 rounded-lg border border-amber-800">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className={`text-2xl font-extrabold ${(metrics?.netBachat || 0) >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+              {formatMoney(metrics?.netBachat || 0, currency)}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">Margin: {metrics?.profitPercentage || 0}%</p>
           </div>
         </div>
       </div>
@@ -120,13 +138,13 @@ export const Dashboard: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <Layers className="w-5 h-5 text-indigo-400" />
-            <h3 className="text-lg font-semibold text-white">Current Stock Levels</h3>
+            <h3 className="text-lg font-semibold text-white">Stock Balances & Inventory</h3>
           </div>
         </div>
 
         {stockSummaries.length === 0 ? (
           <div className="text-center py-8 text-slate-400 text-sm border border-dashed border-slate-700 rounded-lg">
-            No inventory stock items recorded yet.
+            No stock items recorded yet.
             <div className="mt-2">
               <Link
                 to="/backup"
@@ -141,19 +159,31 @@ export const Dashboard: React.FC = () => {
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/50 text-slate-400 text-xs uppercase border-b border-slate-700">
                 <tr>
-                  <th className="py-2.5 px-3">Product</th>
-                  <th className="py-2.5 px-3 text-right">Available Quantity</th>
-                  <th className="py-2.5 px-3 text-right">Unit</th>
+                  <th className="py-2.5 px-3">Item Name</th>
+                  <th className="py-2.5 px-3">Type</th>
+                  <th className="py-2.5 px-3 text-right">Available Stock</th>
+                  <th className="py-2.5 px-3 text-right">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {stockSummaries.map((item) => (
-                  <tr key={item.productId} className="hover:bg-slate-700/30">
-                    <td className="py-3 px-3 font-medium text-white">{item.productName}</td>
+                  <tr key={item.itemId} className="hover:bg-slate-700/30">
+                    <td className="py-3 px-3 font-medium text-white">{item.itemName}</td>
+                    <td className="py-3 px-3 text-xs text-slate-400 capitalize">{item.itemType}</td>
                     <td className="py-3 px-3 text-right font-bold text-slate-100">
-                      {item.currentStock.toLocaleString()}
+                      {item.currentStock.toLocaleString()} {item.unitOrLabel}
                     </td>
-                    <td className="py-3 px-3 text-right text-slate-400">{item.unit}</td>
+                    <td className="py-3 px-3 text-right text-xs">
+                      {item.isLowStock ? (
+                        <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800">
+                          Low Stock
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                          In Stock
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
