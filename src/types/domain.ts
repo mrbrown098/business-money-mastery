@@ -1,7 +1,9 @@
 /**
-  MizanFlow Domain Models
-  All money amounts are stored as integer minor units (e.g., 1 PKR = 100 paisas).
-  All entity records support soft deletes (deletedAt) and multi-device sync preparation (deviceId).
+ * MizanFlow Target Domain Models
+ * - All monetary amounts are stored as integer minor units (paisas, 1 PKR = 100 paisas).
+ * - Raw material quantities are stored in integer grams or millilitres.
+ * - Pack counts are stored as integer counts.
+ * - Every entity record includes BaseEntity metadata for sync and soft deletion.
  */
 
 export interface BaseEntity {
@@ -12,41 +14,12 @@ export interface BaseEntity {
   deviceId: string;
 }
 
-export type ProductType = 'bulk_raw' | 'repacked';
+export type MaterialUnit = 'kg' | 'litre';
 
-export interface Product extends BaseEntity {
+export interface Material extends BaseEntity {
   name: string;
-  sku: string;
-  description: string;
-  type: ProductType;
-  unit: string; // e.g., 'kg', 'liter', 'unit'
-  containerSizeId?: string | null;
-  costPrice: number; // Integer minor units
-  sellingPrice: number; // Integer minor units
-}
-
-export interface ContainerSize extends BaseEntity {
-  name: string; // e.g. "250ml Bottle", "1L Can", "5kg Drum"
-  capacity: number; // e.g., 0.250, 1, 5
-  capacityUnit: string; // e.g., 'liter', 'kg'
-  targetProductId?: string | null;
-}
-
-export type MovementType =
-  | 'purchase'
-  | 'sale'
-  | 'repack_input'
-  | 'repack_output'
-  | 'adjustment'
-  | 'initial';
-
-export interface StockMovement extends BaseEntity {
-  productId: string;
-  quantity: number; // Positive for addition, negative for deduction
-  unit: string;
-  movementType: MovementType;
-  referenceId?: string | null; // purchaseId, saleId, or repackBatchId
-  notes?: string | null;
+  unit: MaterialUnit;
+  lowStockLevel: number; // In grams or millilitres
 }
 
 export type ContactType = 'customer' | 'supplier' | 'both';
@@ -58,84 +31,106 @@ export interface Contact extends BaseEntity {
   type: ContactType;
   address: string;
   notes: string;
+  openingBalance: number; // Integer paisas (positive means customer owes money)
 }
-
-export type OrderStatus = 'completed' | 'pending' | 'cancelled';
 
 export interface Purchase extends BaseEntity {
   supplierId: string;
-  date: string; // ISO date format YYYY-MM-DD or ISO string
-  totalAmount: number; // Integer minor units
-  paidAmount: number; // Integer minor units
-  status: OrderStatus;
-  notes: string;
+  date: string; // YYYY-MM-DD
+  note: string;
+}
+
+export interface PurchaseItem extends BaseEntity {
+  purchaseId: string;
+  materialId: string;
+  quantity: number; // In grams or millilitres
+  totalCost: number; // Integer paisas (excluding transport)
+  transportCost: number; // Integer paisas
+}
+
+export interface Product extends BaseEntity {
+  name: string; // e.g. "Cypermethrin 10EC 100ml"
+  packLabel: string; // e.g. "100ml", "250ml", "1L", "50g"
+  materialId: string; // Raw material link
+  materialPerPack: number; // In grams or millilitres
+  packagingCostPerPack: number; // Integer paisas
+  labourCostPerPack: number; // Integer paisas
+  sellingPrice: number; // Integer paisas
+  lowStockLevel: number; // Low stock alert threshold in pack count
+  active: boolean;
+}
+
+export interface PackingBatch extends BaseEntity {
+  date: string; // YYYY-MM-DD
+  productId: string;
+  packsMade: number;
+  materialUsed: number; // In grams or millilitres
+  packagingCost: number; // Total integer paisas
+  labourCost: number; // Total integer paisas
+  note: string;
 }
 
 export interface Sale extends BaseEntity {
   customerId: string;
-  date: string;
-  totalAmount: number; // Integer minor units
-  paidAmount: number; // Integer minor units
-  status: OrderStatus;
-  notes: string;
+  date: string; // YYYY-MM-DD
+  discount: number; // Integer paisas
+  note: string;
+  invoiceNumber: string;
 }
 
 export interface SaleItem extends BaseEntity {
   saleId: string;
   productId: string;
-  quantity: number;
-  unitPrice: number; // Integer minor units
-  totalPrice: number; // Integer minor units
+  quantity: number; // Pack count
+  rate: number; // Integer paisas per pack
+  costPerPackAtSale: number; // Integer paisas snapshot of pack cost at time of sale
 }
 
 export type PaymentMethod = 'cash' | 'bank_transfer' | 'cheque' | 'other';
 
 export interface Payment extends BaseEntity {
-  contactId: string;
-  saleId?: string | null;
-  purchaseId?: string | null;
-  amount: number; // Integer minor units
-  date: string;
+  customerId: string;
+  saleId: string | null; // Null for general khata ledger payment
+  date: string; // YYYY-MM-DD
+  amount: number; // Integer paisas
   paymentMethod: PaymentMethod;
   referenceNote: string;
 }
 
 export type ExpenseCategory =
+  | 'petrol'
+  | 'labour'
   | 'rent'
-  | 'utilities'
-  | 'salaries'
-  | 'packaging'
+  | 'electricity'
   | 'transport'
-  | 'maintenance'
-  | 'other';
+  | 'misc';
 
 export interface Expense extends BaseEntity {
   category: ExpenseCategory;
-  amount: number; // Integer minor units
-  date: string;
+  amount: number; // Integer paisas
+  date: string; // YYYY-MM-DD
   description: string;
-  recipient: string;
 }
 
-export interface RepackBatch extends BaseEntity {
-  batchNumber: string;
-  bulkProductId: string;
-  bulkQuantityUsed: number;
-  containerSizeId: string;
-  outputProductId: string;
-  unitsProduced: number;
-  wastageQuantity: number;
-  wastagePercentage: number; // e.g. 2.5 for 2.5%
-  date: string;
-  notes: string;
+export type StockItemType = 'material' | 'product';
+
+export type MovementType =
+  | 'purchase'
+  | 'packing_input'
+  | 'packing_output'
+  | 'sale'
+  | 'adjustment';
+
+export interface StockMovement extends BaseEntity {
+  itemType: StockItemType;
+  itemId: string; // materialId or productId
+  quantity: number; // g/ml for material, pack count for product (positive for addition, negative for deduction)
+  movementType: MovementType;
+  referenceId: string | null; // purchaseId, packingBatchId, saleId, etc.
+  notes: string | null;
 }
 
-export interface Settings {
-  id: string; // usually 'default'
+export interface Settings extends BaseEntity {
   businessName: string;
   currency: string; // Default 'PKR'
-  deviceId: string;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
 }

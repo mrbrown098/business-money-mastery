@@ -8,38 +8,10 @@ export const baseEntitySchema = z.object({
   deviceId: z.string(),
 });
 
-export const productSchema = baseEntitySchema.extend({
+export const materialSchema = baseEntitySchema.extend({
   name: z.string(),
-  sku: z.string(),
-  description: z.string(),
-  type: z.enum(['bulk_raw', 'repacked']),
-  unit: z.string(),
-  containerSizeId: z.string().nullish(),
-  costPrice: z.number().int(),
-  sellingPrice: z.number().int(),
-});
-
-export const containerSizeSchema = baseEntitySchema.extend({
-  name: z.string(),
-  capacity: z.number(),
-  capacityUnit: z.string(),
-  targetProductId: z.string().nullish(),
-});
-
-export const stockMovementSchema = baseEntitySchema.extend({
-  productId: z.string(),
-  quantity: z.number(),
-  unit: z.string(),
-  movementType: z.enum([
-    'purchase',
-    'sale',
-    'repack_input',
-    'repack_output',
-    'adjustment',
-    'initial',
-  ]),
-  referenceId: z.string().nullish(),
-  notes: z.string().nullish(),
+  unit: z.enum(['kg', 'litre']),
+  lowStockLevel: z.number(),
 });
 
 export const contactSchema = baseEntitySchema.extend({
@@ -49,95 +21,110 @@ export const contactSchema = baseEntitySchema.extend({
   type: z.enum(['customer', 'supplier', 'both']),
   address: z.string(),
   notes: z.string(),
+  openingBalance: z.number().int(),
 });
 
 export const purchaseSchema = baseEntitySchema.extend({
   supplierId: z.string(),
   date: z.string(),
-  totalAmount: z.number().int(),
-  paidAmount: z.number().int(),
-  status: z.enum(['completed', 'pending', 'cancelled']),
-  notes: z.string(),
+  note: z.string(),
+});
+
+export const purchaseItemSchema = baseEntitySchema.extend({
+  purchaseId: z.string(),
+  materialId: z.string(),
+  quantity: z.number(),
+  totalCost: z.number().int(),
+  transportCost: z.number().int(),
+});
+
+export const productSchema = baseEntitySchema.extend({
+  name: z.string(),
+  packLabel: z.string(),
+  materialId: z.string(),
+  materialPerPack: z.number(),
+  packagingCostPerPack: z.number().int(),
+  labourCostPerPack: z.number().int(),
+  sellingPrice: z.number().int(),
+  lowStockLevel: z.number(),
+  active: z.boolean(),
+});
+
+export const packingBatchSchema = baseEntitySchema.extend({
+  date: z.string(),
+  productId: z.string(),
+  packsMade: z.number(),
+  materialUsed: z.number(),
+  packagingCost: z.number().int(),
+  labourCost: z.number().int(),
+  note: z.string(),
 });
 
 export const saleSchema = baseEntitySchema.extend({
   customerId: z.string(),
   date: z.string(),
-  totalAmount: z.number().int(),
-  paidAmount: z.number().int(),
-  status: z.enum(['completed', 'pending', 'cancelled']),
-  notes: z.string(),
+  discount: z.number().int(),
+  note: z.string(),
+  invoiceNumber: z.string(),
 });
 
 export const saleItemSchema = baseEntitySchema.extend({
   saleId: z.string(),
   productId: z.string(),
   quantity: z.number(),
-  unitPrice: z.number().int(),
-  totalPrice: z.number().int(),
+  rate: z.number().int(),
+  costPerPackAtSale: z.number().int(),
 });
 
 export const paymentSchema = baseEntitySchema.extend({
-  contactId: z.string(),
-  saleId: z.string().nullish(),
-  purchaseId: z.string().nullish(),
-  amount: z.number().int(),
+  customerId: z.string(),
+  saleId: z.string().nullable(),
   date: z.string(),
+  amount: z.number().int(),
   paymentMethod: z.enum(['cash', 'bank_transfer', 'cheque', 'other']),
   referenceNote: z.string(),
 });
 
 export const expenseSchema = baseEntitySchema.extend({
-  category: z.enum([
-    'rent',
-    'utilities',
-    'salaries',
-    'packaging',
-    'transport',
-    'maintenance',
-    'other',
-  ]),
+  category: z.enum(['petrol', 'labour', 'rent', 'electricity', 'transport', 'misc']),
   amount: z.number().int(),
   date: z.string(),
   description: z.string(),
-  recipient: z.string(),
 });
 
-export const repackBatchSchema = baseEntitySchema.extend({
-  batchNumber: z.string(),
-  bulkProductId: z.string(),
-  bulkQuantityUsed: z.number(),
-  containerSizeId: z.string(),
-  outputProductId: z.string(),
-  unitsProduced: z.number(),
-  wastageQuantity: z.number(),
-  wastagePercentage: z.number(),
-  date: z.string(),
-  notes: z.string(),
+export const stockMovementSchema = baseEntitySchema.extend({
+  itemType: z.enum(['material', 'product']),
+  itemId: z.string(),
+  quantity: z.number(),
+  movementType: z.enum([
+    'purchase',
+    'packing_input',
+    'packing_output',
+    'sale',
+    'adjustment',
+  ]),
+  referenceId: z.string().nullable(),
+  notes: z.string().nullable(),
 });
 
-export const settingsSchema = z.object({
-  id: z.string(),
+export const settingsSchema = baseEntitySchema.extend({
   businessName: z.string(),
   currency: z.string(),
-  deviceId: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  deletedAt: z.string().nullable(),
 });
 
 export const exportDataSchema = z.object({
   version: z.number(),
   exportedAt: z.string(),
   settings: z.array(settingsSchema),
-  products: z.array(productSchema),
-  containerSizes: z.array(containerSizeSchema),
-  stockMovements: z.array(stockMovementSchema),
+  materials: z.array(materialSchema),
   contacts: z.array(contactSchema),
   purchases: z.array(purchaseSchema),
+  purchaseItems: z.array(purchaseItemSchema),
+  products: z.array(productSchema),
+  packingBatches: z.array(packingBatchSchema),
   sales: z.array(saleSchema),
   saleItems: z.array(saleItemSchema),
   payments: z.array(paymentSchema),
   expenses: z.array(expenseSchema),
-  repackBatches: z.array(repackBatchSchema),
+  stockMovements: z.array(stockMovementSchema),
 });

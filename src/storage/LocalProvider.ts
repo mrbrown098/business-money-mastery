@@ -2,25 +2,32 @@ import { MizanFlowDatabase, db as defaultDb } from '../db/database';
 import {
   StorageProvider,
   StorageExportData,
-  DashboardMetrics,
-  StockSummary,
+  StockSummaryItem,
 } from './StorageProvider';
 import {
-  Product,
-  ContainerSize,
-  StockMovement,
+  Material,
   Contact,
   Purchase,
+  PurchaseItem,
+  Product,
+  PackingBatch,
   Sale,
   SaleItem,
   Payment,
   Expense,
-  RepackBatch,
+  StockMovement,
   Settings,
 } from '../types/domain';
+import {
+  calculateMaterialStock,
+  calculateProductStock,
+  canSellProduct,
+} from '../domain/ledgerCalculations';
+import { calculateProductFinancials } from '../domain/productCalculations';
+import { calculateMonthlyDashboardMetrics, MonthlyDashboardMetrics } from '../domain/analyticsCalculations';
 
 export class LocalProvider implements StorageProvider {
-  name = 'LocalProvider (Dexie IndexedDB)';
+  name = 'LocalProvider (Dexie IndexedDB v2)';
   private db: MizanFlowDatabase;
 
   constructor(customDb?: MizanFlowDatabase) {
@@ -55,18 +62,17 @@ export class LocalProvider implements StorageProvider {
   // --- Settings ---
   async getSettings(): Promise<Settings> {
     const existing = await this.db.settings.get('default');
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
+
     const now = new Date().toISOString();
     const defaultSettings: Settings = {
       id: 'default',
       businessName: 'MizanFlow Chemical Repacking',
       currency: 'PKR',
-      deviceId: this.getDeviceId(),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+      deviceId: this.getDeviceId(),
     };
     await this.db.settings.put(defaultSettings);
     return defaultSettings;
@@ -83,102 +89,28 @@ export class LocalProvider implements StorageProvider {
     return updated;
   }
 
-  // --- Products ---
-  async getProducts(): Promise<Product[]> {
-    const products = await this.db.products.filter((p) => p.deletedAt === null).toArray();
-    return products;
+  // --- Materials ---
+  async getMaterials(): Promise<Material[]> {
+    return await this.db.materials.filter((m) => m.deletedAt === null).toArray();
   }
 
-  async getProductById(id: string): Promise<Product | null> {
-    const p = await this.db.products.get(id);
-    if (!p || p.deletedAt !== null) return null;
-    return p;
-  }
-
-  async saveProduct(product: Product): Promise<void> {
-    await this.db.products.put({
-      ...product,
+  async saveMaterial(material: Material): Promise<void> {
+    await this.db.materials.put({
+      ...material,
       updatedAt: new Date().toISOString(),
-      deviceId: product.deviceId || this.getDeviceId(),
+      deviceId: material.deviceId || this.getDeviceId(),
     });
   }
 
-  async deleteProduct(id: string): Promise<void> {
-    const p = await this.db.products.get(id);
-    if (p) {
-      await this.db.products.put({
-        ...p,
+  async deleteMaterial(id: string): Promise<void> {
+    const m = await this.db.materials.get(id);
+    if (m) {
+      await this.db.materials.put({
+        ...m,
         deletedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
     }
-  }
-
-  // --- Container Sizes ---
-  async getContainerSizes(): Promise<ContainerSize[]> {
-    return await this.db.containerSizes.filter((c) => c.deletedAt === null).toArray();
-  }
-
-  async saveContainerSize(size: ContainerSize): Promise<void> {
-    await this.db.containerSizes.put({
-      ...size,
-      updatedAt: new Date().toISOString(),
-      deviceId: size.deviceId || this.getDeviceId(),
-    });
-  }
-
-  async deleteContainerSize(id: string): Promise<void> {
-    const c = await this.db.containerSizes.get(id);
-    if (c) {
-      await this.db.containerSizes.put({
-        ...c,
-        deletedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-    }
-  }
-
-  // --- Stock Movements & Ledger ---
-  async getStockMovements(productId?: string): Promise<StockMovement[]> {
-    if (productId) {
-      return await this.db.stockMovements
-        .where('productId')
-        .equals(productId)
-        .filter((m) => m.deletedAt === null)
-        .toArray();
-    }
-    return await this.db.stockMovements.filter((m) => m.deletedAt === null).toArray();
-  }
-
-  async addStockMovement(movement: StockMovement): Promise<void> {
-    await this.db.stockMovements.put({
-      ...movement,
-      updatedAt: new Date().toISOString(),
-      deviceId: movement.deviceId || this.getDeviceId(),
-    });
-  }
-
-  async calculateStock(productId: string): Promise<number> {
-    const movements = await this.getStockMovements(productId);
-    return movements.reduce((acc, m) => acc + m.quantity, 0);
-  }
-
-  async getStockSummaries(): Promise<StockSummary[]> {
-    const products = await this.getProducts();
-    const allMovements = await this.getStockMovements();
-
-    const stockMap = new Map<string, number>();
-    for (const m of allMovements) {
-      const current = stockMap.get(m.productId) || 0;
-      stockMap.set(m.productId, current + m.quantity);
-    }
-
-    return products.map((p) => ({
-      productId: p.id,
-      productName: p.name,
-      unit: p.unit,
-      currentStock: stockMap.get(p.id) || 0,
-    }));
   }
 
   // --- Contacts ---
@@ -186,12 +118,6 @@ export class LocalProvider implements StorageProvider {
     const contacts = await this.db.contacts.filter((c) => c.deletedAt === null).toArray();
     if (!type) return contacts;
     return contacts.filter((c) => c.type === type || c.type === 'both');
-  }
-
-  async getContactById(id: string): Promise<Contact | null> {
-    const c = await this.db.contacts.get(id);
-    if (!c || c.deletedAt !== null) return null;
-    return c;
   }
 
   async saveContact(contact: Contact): Promise<void> {
@@ -213,43 +139,270 @@ export class LocalProvider implements StorageProvider {
     }
   }
 
-  // --- Purchases ---
+  // --- Purchases & Items ---
   async getPurchases(): Promise<Purchase[]> {
     return await this.db.purchases.filter((p) => p.deletedAt === null).toArray();
   }
 
-  async savePurchase(purchase: Purchase): Promise<void> {
-    await this.db.purchases.put({
-      ...purchase,
+  async getPurchaseItems(purchaseId?: string): Promise<PurchaseItem[]> {
+    if (purchaseId) {
+      return await this.db.purchaseItems
+        .where('purchaseId')
+        .equals(purchaseId)
+        .filter((i) => i.deletedAt === null)
+        .toArray();
+    }
+    return await this.db.purchaseItems.filter((i) => i.deletedAt === null).toArray();
+  }
+
+  async savePurchase(purchase: Purchase, items: PurchaseItem[]): Promise<void> {
+    const deviceId = this.getDeviceId();
+    const now = new Date().toISOString();
+
+    await this.db.transaction(
+      'rw',
+      [this.db.purchases, this.db.purchaseItems, this.db.stockMovements],
+      async () => {
+        await this.db.purchases.put({
+          ...purchase,
+          updatedAt: now,
+          deviceId: purchase.deviceId || deviceId,
+        });
+
+        for (const item of items) {
+          await this.db.purchaseItems.put({
+            ...item,
+            updatedAt: now,
+            deviceId: item.deviceId || deviceId,
+          });
+
+          // Add raw material stock movement
+          const movement: StockMovement = {
+            id: this.generateId(),
+            itemType: 'material',
+            itemId: item.materialId,
+            quantity: item.quantity,
+            movementType: 'purchase',
+            referenceId: purchase.id,
+            notes: `Purchase #${purchase.id}`,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+            deviceId,
+          };
+          await this.db.stockMovements.put(movement);
+        }
+      }
+    );
+  }
+
+  // --- Products ---
+  async getProducts(): Promise<Product[]> {
+    return await this.db.products.filter((p) => p.deletedAt === null).toArray();
+  }
+
+  async saveProduct(product: Product): Promise<void> {
+    await this.db.products.put({
+      ...product,
       updatedAt: new Date().toISOString(),
-      deviceId: purchase.deviceId || this.getDeviceId(),
+      deviceId: product.deviceId || this.getDeviceId(),
     });
   }
 
-  // --- Sales & SaleItems ---
+  async deleteProduct(id: string): Promise<void> {
+    const p = await this.db.products.get(id);
+    if (p) {
+      await this.db.products.put({
+        ...p,
+        deletedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  // --- Packing Batches ---
+  async getPackingBatches(): Promise<PackingBatch[]> {
+    return await this.db.packingBatches.filter((b) => b.deletedAt === null).toArray();
+  }
+
+  async createPackingBatch(batch: PackingBatch): Promise<void> {
+    const deviceId = this.getDeviceId();
+    const now = new Date().toISOString();
+
+    const product = await this.db.products.get(batch.productId);
+    if (!product) throw new Error(`Product ${batch.productId} not found`);
+
+    await this.db.transaction(
+      'rw',
+      [this.db.packingBatches, this.db.stockMovements],
+      async () => {
+        await this.db.packingBatches.put({
+          ...batch,
+          updatedAt: now,
+          deviceId: batch.deviceId || deviceId,
+        });
+
+        // 1. Deduct raw material stock
+        const materialDeduction: StockMovement = {
+          id: this.generateId(),
+          itemType: 'material',
+          itemId: product.materialId,
+          quantity: -Math.abs(batch.materialUsed),
+          movementType: 'packing_input',
+          referenceId: batch.id,
+          notes: `Packing batch input ${batch.id}`,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+          deviceId,
+        };
+        await this.db.stockMovements.put(materialDeduction);
+
+        // 2. Add finished product stock
+        const productAddition: StockMovement = {
+          id: this.generateId(),
+          itemType: 'product',
+          itemId: batch.productId,
+          quantity: Math.abs(batch.packsMade),
+          movementType: 'packing_output',
+          referenceId: batch.id,
+          notes: `Packing batch output ${batch.id}`,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+          deviceId,
+        };
+        await this.db.stockMovements.put(productAddition);
+      }
+    );
+  }
+
+  // --- Sales & Transactions ---
   async getSales(): Promise<Sale[]> {
     return await this.db.sales.filter((s) => s.deletedAt === null).toArray();
   }
 
-  async saveSale(sale: Sale, items: SaleItem[]): Promise<void> {
-    const deviceId = sale.deviceId || this.getDeviceId();
+  async getSaleItems(saleId?: string): Promise<SaleItem[]> {
+    if (saleId) {
+      return await this.db.saleItems
+        .where('saleId')
+        .equals(saleId)
+        .filter((i) => i.deletedAt === null)
+        .toArray();
+    }
+    return await this.db.saleItems.filter((i) => i.deletedAt === null).toArray();
+  }
+
+  async saveSaleTransaction(
+    sale: Sale,
+    items: Omit<SaleItem, 'costPerPackAtSale'>[],
+    payment?: Omit<Payment, 'saleId'>
+  ): Promise<void> {
+    const deviceId = this.getDeviceId();
     const now = new Date().toISOString();
 
-    await this.db.transaction('rw', [this.db.sales, this.db.saleItems], async () => {
-      await this.db.sales.put({
-        ...sale,
-        updatedAt: now,
-        deviceId,
-      });
+    const allMovements = await this.getStockMovements();
+    const purchaseItems = await this.getPurchaseItems();
+    const products = await this.getProducts();
 
-      for (const item of items) {
-        await this.db.saleItems.put({
-          ...item,
-          updatedAt: now,
-          deviceId,
-        });
+    // Oversell validation check
+    for (const item of items) {
+      if (!canSellProduct(item.productId, item.quantity, allMovements)) {
+        const prod = products.find((p) => p.id === item.productId);
+        const current = calculateProductStock(item.productId, allMovements);
+        throw new Error(
+          `Cannot oversell product "${prod ? prod.name : item.productId}". Current stock is ${current}, requested ${item.quantity}.`
+        );
       }
-    });
+    }
+
+    await this.db.transaction(
+      'rw',
+      [this.db.sales, this.db.saleItems, this.db.stockMovements, this.db.payments],
+      async () => {
+        await this.db.sales.put({
+          ...sale,
+          updatedAt: now,
+          deviceId: sale.deviceId || deviceId,
+        });
+
+        for (const item of items) {
+          const product = products.find((p) => p.id === item.productId);
+          let costPerPackAtSale = 0;
+          if (product) {
+            const fin = calculateProductFinancials(product, purchaseItems);
+            costPerPackAtSale = fin.costPerPack;
+          }
+
+          const fullItem: SaleItem = {
+            ...item,
+            costPerPackAtSale,
+            updatedAt: now,
+            deviceId: item.deviceId || deviceId,
+          };
+          await this.db.saleItems.put(fullItem);
+
+          // Deduct sold product stock
+          const movement: StockMovement = {
+            id: this.generateId(),
+            itemType: 'product',
+            itemId: item.productId,
+            quantity: -Math.abs(item.quantity),
+            movementType: 'sale',
+            referenceId: sale.id,
+            notes: `Sale ${sale.invoiceNumber}`,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+            deviceId,
+          };
+          await this.db.stockMovements.put(movement);
+        }
+
+        if (payment && payment.amount > 0) {
+          const fullPayment: Payment = {
+            ...payment,
+            saleId: sale.id,
+            updatedAt: now,
+            deviceId: payment.deviceId || deviceId,
+          };
+          await this.db.payments.put(fullPayment);
+        }
+      }
+    );
+  }
+
+  async softDeleteSale(saleId: string): Promise<void> {
+    const now = new Date().toISOString();
+
+    await this.db.transaction(
+      'rw',
+      [this.db.sales, this.db.saleItems, this.db.stockMovements, this.db.payments],
+      async () => {
+        const sale = await this.db.sales.get(saleId);
+        if (sale) {
+          await this.db.sales.put({ ...sale, deletedAt: now, updatedAt: now });
+        }
+
+        const items = await this.db.saleItems.where('saleId').equals(saleId).toArray();
+        for (const item of items) {
+          await this.db.saleItems.put({ ...item, deletedAt: now, updatedAt: now });
+        }
+
+        const movements = await this.db.stockMovements
+          .where('referenceId')
+          .equals(saleId)
+          .toArray();
+        for (const m of movements) {
+          await this.db.stockMovements.put({ ...m, deletedAt: now, updatedAt: now });
+        }
+
+        const payments = await this.db.payments.where('saleId').equals(saleId).toArray();
+        for (const p of payments) {
+          await this.db.payments.put({ ...p, deletedAt: now, updatedAt: now });
+        }
+      }
+    );
   }
 
   // --- Payments ---
@@ -289,133 +442,94 @@ export class LocalProvider implements StorageProvider {
     }
   }
 
-  // --- Repack Batches ---
-  async getRepackBatches(): Promise<RepackBatch[]> {
-    return await this.db.repackBatches.filter((b) => b.deletedAt === null).toArray();
+  // --- Stock Ledger & Balances ---
+  async getStockMovements(): Promise<StockMovement[]> {
+    return await this.db.stockMovements.filter((m) => m.deletedAt === null).toArray();
   }
 
-  async createRepackBatch(
-    input: Omit<RepackBatch, 'wastageQuantity' | 'wastagePercentage'>
-  ): Promise<RepackBatch> {
-    const container = await this.db.containerSizes.get(input.containerSizeId);
-    const capacity = container ? container.capacity : 1;
-
-    const netOutputQuantity = input.unitsProduced * capacity;
-    const wastageQuantity = Math.max(0, input.bulkQuantityUsed - netOutputQuantity);
-    const wastagePercentage =
-      input.bulkQuantityUsed > 0
-        ? Number(((wastageQuantity / input.bulkQuantityUsed) * 100).toFixed(2))
-        : 0;
-
-    const batch: RepackBatch = {
-      ...input,
-      wastageQuantity,
-      wastagePercentage,
-      updatedAt: new Date().toISOString(),
-      deviceId: input.deviceId || this.getDeviceId(),
-    };
-
-    const now = new Date().toISOString();
-    const deviceId = this.getDeviceId();
-
-    // Transaction to save batch and update stock movements ledger
-    await this.db.transaction(
-      'rw',
-      [this.db.repackBatches, this.db.stockMovements, this.db.products],
-      async () => {
-        await this.db.repackBatches.put(batch);
-
-        const bulkProduct = await this.db.products.get(batch.bulkProductId);
-        const outputProduct = await this.db.products.get(batch.outputProductId);
-
-        // Deduct bulk product raw stock
-        const bulkDeduction: StockMovement = {
-          id: this.generateId(),
-          productId: batch.bulkProductId,
-          quantity: -Math.abs(batch.bulkQuantityUsed),
-          unit: bulkProduct?.unit || 'kg',
-          movementType: 'repack_input',
-          referenceId: batch.id,
-          notes: `Repack batch ${batch.batchNumber} input`,
-          createdAt: now,
-          updatedAt: now,
-          deletedAt: null,
-          deviceId,
-        };
-        await this.db.stockMovements.put(bulkDeduction);
-
-        // Add repacked finished product stock
-        const outputAddition: StockMovement = {
-          id: this.generateId(),
-          productId: batch.outputProductId,
-          quantity: batch.unitsProduced,
-          unit: outputProduct?.unit || 'unit',
-          movementType: 'repack_output',
-          referenceId: batch.id,
-          notes: `Repack batch ${batch.batchNumber} output`,
-          createdAt: now,
-          updatedAt: now,
-          deletedAt: null,
-          deviceId,
-        };
-        await this.db.stockMovements.put(outputAddition);
-      }
-    );
-
-    return batch;
+  async getMaterialStock(materialId: string): Promise<number> {
+    const movements = await this.getStockMovements();
+    return calculateMaterialStock(materialId, movements);
   }
 
-  // --- Dashboard Aggregates ---
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
+  async getProductStock(productId: string): Promise<number> {
+    const movements = await this.getStockMovements();
+    return calculateProductStock(productId, movements);
+  }
+
+  async getStockSummaries(): Promise<StockSummaryItem[]> {
+    const materials = await this.getMaterials();
+    const products = await this.getProducts();
+    const movements = await this.getStockMovements();
+
+    const result: StockSummaryItem[] = [];
+
+    for (const mat of materials) {
+      const stock = calculateMaterialStock(mat.id, movements);
+      result.push({
+        itemId: mat.id,
+        itemName: mat.name,
+        itemType: 'material',
+        unitOrLabel: mat.unit,
+        currentStock: stock,
+        lowStockLevel: mat.lowStockLevel,
+        isLowStock: stock <= mat.lowStockLevel,
+      });
+    }
+
+    for (const prod of products) {
+      const stock = calculateProductStock(prod.id, movements);
+      result.push({
+        itemId: prod.id,
+        itemName: prod.name,
+        itemType: 'product',
+        unitOrLabel: prod.packLabel,
+        currentStock: stock,
+        lowStockLevel: prod.lowStockLevel,
+        isLowStock: stock <= prod.lowStockLevel,
+      });
+    }
+
+    return result;
+  }
+
+  // --- Analytics & Dashboard ---
+  async getMonthlyMetrics(yearMonth: string): Promise<MonthlyDashboardMetrics> {
     const sales = await this.getSales();
+    const saleItems = await this.getSaleItems();
     const payments = await this.getPayments();
     const expenses = await this.getExpenses();
-    const stockSummaries = await this.getStockSummaries();
+    const contacts = await this.getContacts();
+    const purchaseItems = await this.getPurchaseItems();
 
-    // 1. Total Receivables: Sum of (sale.totalAmount - sale.paidAmount) for active sales + net outstanding from payment ledger
-    // Receivables = Total Sales Total Amount - Total Payments received against Sales
-    const totalSalesAmount = sales
-      .filter((s) => s.status !== 'cancelled')
-      .reduce((acc, s) => acc + s.totalAmount, 0);
-
-    const totalSalesPayments = payments
-      .filter((p) => p.saleId != null)
-      .reduce((acc, p) => acc + p.amount, 0);
-
-    const totalReceivables = Math.max(0, totalSalesAmount - totalSalesPayments);
-
-    // 2. Active Stock Item Count: Count of products with currentStock > 0
-    const activeStockCount = stockSummaries.filter((s) => s.currentStock > 0).length;
-
-    // 3. This Month Expenses
-    const currentYearMonth = new Date().toISOString().substring(0, 7); // "YYYY-MM"
-    const thisMonthExpenses = expenses
-      .filter((e) => e.date.substring(0, 7) === currentYearMonth)
-      .reduce((acc, e) => acc + e.amount, 0);
-
-    return {
-      totalReceivables,
-      activeStockCount,
-      thisMonthExpenses,
-    };
+    return calculateMonthlyDashboardMetrics(
+      yearMonth,
+      sales,
+      saleItems,
+      payments,
+      expenses,
+      contacts,
+      purchaseItems
+    );
   }
 
-  // --- Export & Import ---
+  // --- Export, Import & Demo ---
   async exportAllData(): Promise<StorageExportData> {
     return {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       settings: await this.db.settings.toArray(),
-      products: await this.db.products.toArray(),
-      containerSizes: await this.db.containerSizes.toArray(),
-      stockMovements: await this.db.stockMovements.toArray(),
+      materials: await this.db.materials.toArray(),
       contacts: await this.db.contacts.toArray(),
       purchases: await this.db.purchases.toArray(),
+      purchaseItems: await this.db.purchaseItems.toArray(),
+      products: await this.db.products.toArray(),
+      packingBatches: await this.db.packingBatches.toArray(),
       sales: await this.db.sales.toArray(),
       saleItems: await this.db.saleItems.toArray(),
       payments: await this.db.payments.toArray(),
       expenses: await this.db.expenses.toArray(),
-      repackBatches: await this.db.repackBatches.toArray(),
+      stockMovements: await this.db.stockMovements.toArray(),
     };
   }
 
@@ -424,41 +538,33 @@ export class LocalProvider implements StorageProvider {
       'rw',
       [
         this.db.settings,
-        this.db.products,
-        this.db.containerSizes,
-        this.db.stockMovements,
+        this.db.materials,
         this.db.contacts,
         this.db.purchases,
+        this.db.purchaseItems,
+        this.db.products,
+        this.db.packingBatches,
         this.db.sales,
         this.db.saleItems,
         this.db.payments,
         this.db.expenses,
-        this.db.repackBatches,
+        this.db.stockMovements,
       ],
       async () => {
-        await this.db.settings.clear();
-        await this.db.products.clear();
-        await this.db.containerSizes.clear();
-        await this.db.stockMovements.clear();
-        await this.db.contacts.clear();
-        await this.db.purchases.clear();
-        await this.db.sales.clear();
-        await this.db.saleItems.clear();
-        await this.db.payments.clear();
-        await this.db.expenses.clear();
-        await this.db.repackBatches.clear();
+        await this.clearAllData();
 
-        if (data.settings?.length) await this.db.settings.bulkAdd(data.settings);
-        if (data.products?.length) await this.db.products.bulkAdd(data.products);
-        if (data.containerSizes?.length) await this.db.containerSizes.bulkAdd(data.containerSizes);
-        if (data.stockMovements?.length) await this.db.stockMovements.bulkAdd(data.stockMovements);
-        if (data.contacts?.length) await this.db.contacts.bulkAdd(data.contacts);
-        if (data.purchases?.length) await this.db.purchases.bulkAdd(data.purchases);
-        if (data.sales?.length) await this.db.sales.bulkAdd(data.sales);
-        if (data.saleItems?.length) await this.db.saleItems.bulkAdd(data.saleItems);
-        if (data.payments?.length) await this.db.payments.bulkAdd(data.payments);
-        if (data.expenses?.length) await this.db.expenses.bulkAdd(data.expenses);
-        if (data.repackBatches?.length) await this.db.repackBatches.bulkAdd(data.repackBatches);
+        if (data.settings?.length) await this.db.settings.bulkPut(data.settings);
+        if (data.materials?.length) await this.db.materials.bulkPut(data.materials);
+        if (data.contacts?.length) await this.db.contacts.bulkPut(data.contacts);
+        if (data.purchases?.length) await this.db.purchases.bulkPut(data.purchases);
+        if (data.purchaseItems?.length) await this.db.purchaseItems.bulkPut(data.purchaseItems);
+        if (data.products?.length) await this.db.products.bulkPut(data.products);
+        if (data.packingBatches?.length) await this.db.packingBatches.bulkPut(data.packingBatches);
+        if (data.sales?.length) await this.db.sales.bulkPut(data.sales);
+        if (data.saleItems?.length) await this.db.saleItems.bulkPut(data.saleItems);
+        if (data.payments?.length) await this.db.payments.bulkPut(data.payments);
+        if (data.expenses?.length) await this.db.expenses.bulkPut(data.expenses);
+        if (data.stockMovements?.length) await this.db.stockMovements.bulkPut(data.stockMovements);
       }
     );
   }
@@ -468,28 +574,31 @@ export class LocalProvider implements StorageProvider {
       'rw',
       [
         this.db.settings,
-        this.db.products,
-        this.db.containerSizes,
-        this.db.stockMovements,
+        this.db.materials,
         this.db.contacts,
         this.db.purchases,
+        this.db.purchaseItems,
+        this.db.products,
+        this.db.packingBatches,
         this.db.sales,
         this.db.saleItems,
         this.db.payments,
         this.db.expenses,
-        this.db.repackBatches,
+        this.db.stockMovements,
       ],
       async () => {
-        await this.db.products.clear();
-        await this.db.containerSizes.clear();
-        await this.db.stockMovements.clear();
+        await this.db.settings.clear();
+        await this.db.materials.clear();
         await this.db.contacts.clear();
         await this.db.purchases.clear();
+        await this.db.purchaseItems.clear();
+        await this.db.products.clear();
+        await this.db.packingBatches.clear();
         await this.db.sales.clear();
         await this.db.saleItems.clear();
         await this.db.payments.clear();
         await this.db.expenses.clear();
-        await this.db.repackBatches.clear();
+        await this.db.stockMovements.clear();
       }
     );
   }
@@ -503,78 +612,33 @@ export class LocalProvider implements StorageProvider {
 
     // 1. Settings
     await this.updateSettings({
-      businessName: 'Al-Mizan Chemical Repackers',
+      businessName: 'MizanFlow Chemical Repackers',
       currency: 'PKR',
     });
 
-    // 2. Container Sizes
-    const size1L: ContainerSize = {
-      id: 'cs-1l',
-      name: '1 Liter Bottle',
-      capacity: 1.0,
-      capacityUnit: 'liter',
+    // 2. Material: Cypermethrin Liquid
+    const matCyper: Material = {
+      id: 'mat-cyper',
+      name: 'Cypermethrin Technical Liquid',
+      unit: 'litre',
+      lowStockLevel: 5000, // 5 Litres in ml
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
       deviceId,
     };
-    const size5L: ContainerSize = {
-      id: 'cs-5l',
-      name: '5 Liter Can',
-      capacity: 5.0,
-      capacityUnit: 'liter',
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-      deviceId,
-    };
-    await this.saveContainerSize(size1L);
-    await this.saveContainerSize(size5L);
+    await this.saveMaterial(matCyper);
 
-    // 3. Products
-    const bulkSolvent: Product = {
-      id: 'prod-bulk-solvent',
-      name: 'Industrial Solvent Drum 200L',
-      sku: 'RAW-SOL-200',
-      description: 'Bulk raw solvent chemical',
-      type: 'bulk_raw',
-      unit: 'liter',
-      costPrice: 25000, // 250.00 PKR per liter
-      sellingPrice: 0,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-      deviceId,
-    };
-
-    const repacked1LSolvent: Product = {
-      id: 'prod-repack-1l-solvent',
-      name: 'Mizan Pure Solvent 1L',
-      sku: 'FIN-SOL-1L',
-      description: 'Repacked premium solvent in 1L bottle',
-      type: 'repacked',
-      unit: 'bottle',
-      containerSizeId: 'cs-1l',
-      costPrice: 28000, // 280.00 PKR cost per bottle
-      sellingPrice: 40000, // 400.00 PKR selling price
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-      deviceId,
-    };
-
-    await this.saveProduct(bulkSolvent);
-    await this.saveProduct(repacked1LSolvent);
-
-    // 4. Contacts
+    // 3. Contacts
     const supplier: Contact = {
       id: 'contact-sup-1',
-      name: 'Lahore Petrochemicals Ltd',
-      phone: '+92 300 1234567',
-      email: 'sales@lahorepetro.com',
+      name: 'Lahore Agrochemicals Ltd',
+      phone: '03001234567',
+      email: 'sales@lahoreagro.pk',
       type: 'supplier',
       address: 'Multan Road, Lahore',
-      notes: 'Primary solvent vendor',
+      notes: 'Primary bulk chemical supplier',
+      openingBalance: 0,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -583,12 +647,13 @@ export class LocalProvider implements StorageProvider {
 
     const customer: Contact = {
       id: 'contact-cust-1',
-      name: 'Tariq Auto Care Workshop',
-      phone: '+92 321 7654321',
-      email: 'tariq@autocare.pk',
+      name: 'Tariq Agri Store',
+      phone: '03217654321',
+      email: 'tariq@agristore.pk',
       type: 'customer',
       address: 'Ferozepur Road, Lahore',
       notes: 'Regular credit customer',
+      openingBalance: 100000, // Rs 1,000 opening balance in paisas
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -598,126 +663,125 @@ export class LocalProvider implements StorageProvider {
     await this.saveContact(supplier);
     await this.saveContact(customer);
 
-    // 5. Stock movements: Purchase 500 liters of bulk raw chemical
-    await this.addStockMovement({
-      id: 'sm-init-1',
-      productId: 'prod-bulk-solvent',
-      quantity: 500,
-      unit: 'liter',
-      movementType: 'purchase',
-      referenceId: 'purch-1',
-      notes: 'Initial bulk stock purchase 500L',
+    // 4. Purchase: 20 Litres (20,000 ml) for Rs 40,000 + Rs 2,000 transport = Rs 2,100 per Litre
+    const purchase: Purchase = {
+      id: 'purch-001',
+      supplierId: supplier.id,
+      date: today,
+      note: 'Initial 20L Cypermethrin purchase',
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
       deviceId,
-    });
+    };
 
-    // 6. Repack Batch: Consume 100L bulk raw chemical -> Produce 98 units of 1L bottles (2L wastage)
-    await this.createRepackBatch({
+    const purchaseItem: PurchaseItem = {
+      id: 'pitem-001',
+      purchaseId: purchase.id,
+      materialId: matCyper.id,
+      quantity: 20000, // 20,000 ml
+      totalCost: 4000000, // Rs 40,000 in paisas
+      transportCost: 200000, // Rs 2,000 in paisas
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      deviceId,
+    };
+
+    await this.savePurchase(purchase, [purchaseItem]);
+
+    // 5. Product: Cypermethrin 100ml
+    const prodCyper100ml: Product = {
+      id: 'prod-cyper-100ml',
+      name: 'Cypermethrin 10EC 100ml Bottle',
+      packLabel: '100ml',
+      materialId: matCyper.id,
+      materialPerPack: 100, // 100 ml per pack
+      packagingCostPerPack: 3000, // Rs 30 in paisas
+      labourCostPerPack: 1000, // Rs 10 in paisas
+      sellingPrice: 30000, // Rs 300 in paisas
+      lowStockLevel: 10,
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      deviceId,
+    };
+
+    await this.saveProduct(prodCyper100ml);
+
+    // 6. Packing Batch: Pack 100 bottles = 10,000 ml material used
+    const batch: PackingBatch = {
       id: 'batch-001',
-      batchNumber: 'BATCH-2025-01',
-      bulkProductId: 'prod-bulk-solvent',
-      bulkQuantityUsed: 100,
-      containerSizeId: 'cs-1l',
-      outputProductId: 'prod-repack-1l-solvent',
-      unitsProduced: 98,
       date: today,
-      notes: 'First test batch repacking',
+      productId: prodCyper100ml.id,
+      packsMade: 100,
+      materialUsed: 10000, // 10,000 ml
+      packagingCost: 300000, // Rs 3,000
+      labourCost: 100000, // Rs 1,000
+      note: 'First 100 bottle batch',
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
       deviceId,
-    });
+    };
 
-    // 7. Sale: Sell 20 bottles to customer on partial credit
-    const saleTotal = 20 * 40000; // 8,000.00 PKR (800000 minor units)
-    const salePaid = 300000; // 3,000.00 PKR paid, balance 5,000.00 PKR receivable
+    await this.createPackingBatch(batch);
 
-    const demoSale: Sale = {
+    // 7. Sale: Sell 5 packs @ Rs 300 with Rs 100 discount = Net Rs 1,400 (Rs 500 payment, Rs 900 balance)
+    const sale: Sale = {
       id: 'sale-001',
-      customerId: 'contact-cust-1',
+      customerId: customer.id,
       date: today,
-      totalAmount: saleTotal,
-      paidAmount: salePaid,
-      status: 'pending',
-      notes: 'Sale of 20 bottles on 15-day credit',
+      discount: 10000, // Rs 100 in paisas
+      note: '5 bottles on credit',
+      invoiceNumber: 'INV-2026-001',
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
       deviceId,
     };
 
-    const demoSaleItem: SaleItem = {
-      id: 'sale-item-001',
-      saleId: 'sale-001',
-      productId: 'prod-repack-1l-solvent',
-      quantity: 20,
-      unitPrice: 40000,
-      totalPrice: saleTotal,
+    const saleItem: Omit<SaleItem, 'costPerPackAtSale'> = {
+      id: 'sitem-001',
+      saleId: sale.id,
+      productId: prodCyper100ml.id,
+      quantity: 5,
+      rate: 30000, // Rs 300 per pack in paisas
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
       deviceId,
     };
 
-    await this.saveSale(demoSale, [demoSaleItem]);
-
-    // Deduct sold stock
-    await this.addStockMovement({
-      id: 'sm-sale-1',
-      productId: 'prod-repack-1l-solvent',
-      quantity: -20,
-      unit: 'bottle',
-      movementType: 'sale',
-      referenceId: 'sale-001',
-      notes: 'Sale to Tariq Auto Care',
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-      deviceId,
-    });
-
-    // Record partial payment
-    await this.savePayment({
+    const payment: Omit<Payment, 'saleId'> = {
       id: 'pay-001',
-      contactId: 'contact-cust-1',
-      saleId: 'sale-001',
-      amount: salePaid,
+      customerId: customer.id,
       date: today,
+      amount: 50000, // Rs 500 paid in paisas
       paymentMethod: 'cash',
-      referenceNote: 'Advance cash payment for sale #sale-001',
+      referenceNote: 'Advance cash payment for INV-2026-001',
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
       deviceId,
-    });
+    };
 
-    // 8. Expenses
-    await this.saveExpense({
+    await this.saveSaleTransaction(sale, [saleItem], payment);
+
+    // 8. Expense: Petrol / transport Rs 500
+    const expense: Expense = {
       id: 'exp-001',
-      category: 'rent',
-      amount: 4500000, // 45,000.00 PKR shop rent
+      category: 'petrol',
+      amount: 50000, // Rs 500 in paisas
       date: today,
-      description: 'Monthly workshop facility rent',
-      recipient: 'Landlord Mr. Khan',
+      description: 'Delivery bike petrol',
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
       deviceId,
-    });
+    };
 
-    await this.saveExpense({
-      id: 'exp-002',
-      category: 'packaging',
-      amount: 1250000, // 12,500.00 PKR empty bottles and labels
-      date: today,
-      description: 'Plastic 1L bottles (100 units) and custom labels',
-      recipient: 'Pak Packaging Supplies',
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-      deviceId,
-    });
+    await this.saveExpense(expense);
   }
 }

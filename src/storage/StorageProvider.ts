@@ -1,44 +1,44 @@
 import {
-  Product,
-  ContainerSize,
-  StockMovement,
+  Material,
   Contact,
   Purchase,
+  PurchaseItem,
+  Product,
+  PackingBatch,
   Sale,
   SaleItem,
   Payment,
   Expense,
-  RepackBatch,
+  StockMovement,
   Settings,
 } from '../types/domain';
+import { MonthlyDashboardMetrics } from '../domain/analyticsCalculations';
 
 export interface StorageExportData {
   version: number;
   exportedAt: string;
   settings: Settings[];
-  products: Product[];
-  containerSizes: ContainerSize[];
-  stockMovements: StockMovement[];
+  materials: Material[];
   contacts: Contact[];
   purchases: Purchase[];
+  purchaseItems: PurchaseItem[];
+  products: Product[];
+  packingBatches: PackingBatch[];
   sales: Sale[];
   saleItems: SaleItem[];
   payments: Payment[];
   expenses: Expense[];
-  repackBatches: RepackBatch[];
+  stockMovements: StockMovement[];
 }
 
-export interface DashboardMetrics {
-  totalReceivables: number; // In integer minor units
-  activeStockCount: number; // Count of distinct products with positive stock
-  thisMonthExpenses: number; // In integer minor units
-}
-
-export interface StockSummary {
-  productId: string;
-  productName: string;
-  unit: string;
+export interface StockSummaryItem {
+  itemId: string;
+  itemName: string;
+  itemType: 'material' | 'product';
+  unitOrLabel: string;
   currentStock: number;
+  lowStockLevel: number;
+  isLowStock: boolean;
 }
 
 export interface StorageProvider {
@@ -49,36 +49,39 @@ export interface StorageProvider {
   getSettings(): Promise<Settings>;
   updateSettings(settings: Partial<Settings>): Promise<Settings>;
 
-  // Products
-  getProducts(): Promise<Product[]>;
-  getProductById(id: string): Promise<Product | null>;
-  saveProduct(product: Product): Promise<void>;
-  deleteProduct(id: string): Promise<void>;
-
-  // Container Sizes
-  getContainerSizes(): Promise<ContainerSize[]>;
-  saveContainerSize(size: ContainerSize): Promise<void>;
-  deleteContainerSize(id: string): Promise<void>;
-
-  // Stock Movements & Ledger
-  getStockMovements(productId?: string): Promise<StockMovement[]>;
-  addStockMovement(movement: StockMovement): Promise<void>;
-  calculateStock(productId: string): Promise<number>;
-  getStockSummaries(): Promise<StockSummary[]>;
+  // Materials
+  getMaterials(): Promise<Material[]>;
+  saveMaterial(material: Material): Promise<void>;
+  deleteMaterial(id: string): Promise<void>;
 
   // Contacts
   getContacts(type?: 'customer' | 'supplier'): Promise<Contact[]>;
-  getContactById(id: string): Promise<Contact | null>;
   saveContact(contact: Contact): Promise<void>;
   deleteContact(id: string): Promise<void>;
 
   // Purchases
   getPurchases(): Promise<Purchase[]>;
-  savePurchase(purchase: Purchase): Promise<void>;
+  getPurchaseItems(purchaseId?: string): Promise<PurchaseItem[]>;
+  savePurchase(purchase: Purchase, items: PurchaseItem[]): Promise<void>;
 
-  // Sales & SaleItems
+  // Products
+  getProducts(): Promise<Product[]>;
+  saveProduct(product: Product): Promise<void>;
+  deleteProduct(id: string): Promise<void>;
+
+  // Packing Batches
+  getPackingBatches(): Promise<PackingBatch[]>;
+  createPackingBatch(batch: PackingBatch): Promise<void>;
+
+  // Sales & Transactions
   getSales(): Promise<Sale[]>;
-  saveSale(sale: Sale, items: SaleItem[]): Promise<void>;
+  getSaleItems(saleId?: string): Promise<SaleItem[]>;
+  saveSaleTransaction(
+    sale: Sale,
+    items: Omit<SaleItem, 'costPerPackAtSale'>[],
+    payment?: Omit<Payment, 'saleId'>
+  ): Promise<void>;
+  softDeleteSale(saleId: string): Promise<void>;
 
   // Payments
   getPayments(): Promise<Payment[]>;
@@ -89,16 +92,16 @@ export interface StorageProvider {
   saveExpense(expense: Expense): Promise<void>;
   deleteExpense(id: string): Promise<void>;
 
-  // Repack Batches
-  getRepackBatches(): Promise<RepackBatch[]>;
-  createRepackBatch(
-    batch: Omit<RepackBatch, 'wastageQuantity' | 'wastagePercentage'>
-  ): Promise<RepackBatch>;
+  // Stock Ledger & Balances
+  getStockMovements(): Promise<StockMovement[]>;
+  getMaterialStock(materialId: string): Promise<number>;
+  getProductStock(productId: string): Promise<number>;
+  getStockSummaries(): Promise<StockSummaryItem[]>;
 
-  // Dashboard Aggregates
-  getDashboardMetrics(): Promise<DashboardMetrics>;
+  // Analytics & Dashboard
+  getMonthlyMetrics(yearMonth: string): Promise<MonthlyDashboardMetrics>;
 
-  // Data Export & Import
+  // Export, Import & Demo
   exportAllData(): Promise<StorageExportData>;
   importAllData(data: StorageExportData): Promise<void>;
   clearAllData(): Promise<void>;
