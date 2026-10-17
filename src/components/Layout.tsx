@@ -1,8 +1,34 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Settings as SettingsIcon, Database, FlaskConical } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Settings as SettingsIcon,
+  Database,
+  FlaskConical,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 
 export const Layout: React.FC = () => {
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+      ? navigator.onLine
+      : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const navItems = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/backup', label: 'Data & Backup', icon: Database },
@@ -22,10 +48,20 @@ export const Layout: React.FC = () => {
             <p className="text-xs text-slate-400">Chemical Repacking Management</p>
           </div>
         </div>
+
+        {/* Dynamic Online / Offline Status Badge */}
         <div className="flex items-center space-x-2">
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800">
-            Offline Ready
-          </span>
+          {isOnline ? (
+            <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800">
+              <Wifi className="w-3.5 h-3.5" />
+              <span>Online</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-950 text-amber-400 border border-amber-800">
+              <WifiOff className="w-3.5 h-3.5" />
+              <span>Offline Mode</span>
+            </span>
+          )}
         </div>
       </header>
 

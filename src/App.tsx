@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { StorageReactProvider } from './storage/StorageContext';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
@@ -8,7 +8,7 @@ import { BackupPage } from './pages/BackupPage';
 export function App() {
   return (
     <StorageReactProvider>
-      <BrowserRouter basename="/business-money-mastery">
+      <HashRouter>
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
@@ -16,7 +16,7 @@ export function App() {
             <Route path="backup" element={<BackupPage />} />
           </Route>
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </StorageReactProvider>
   );
 }
